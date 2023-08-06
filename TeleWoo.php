@@ -2,6 +2,8 @@
 /*
 Plugin Name: TeleWoo
 Description: Sends published products to a Telegram channel with image and info.
+Version: 1.0
+Author: PeymanThePro
 */
 
 // Register settings
