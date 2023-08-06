@@ -2,8 +2,6 @@
 /*
 Plugin Name: TeleWoo
 Description: Sends published products to a Telegram channel with image and info.
-Version: 1.0
-Author: PeymanThePro
 */
 
 // Register settings
@@ -15,7 +13,7 @@ function custom_telegram_messages_settings() {
     register_setting('custom_telegram_messages_group', 'inline_button_text');
     register_setting('custom_telegram_messages_group', 'telegram_bot_api');
     register_setting('custom_telegram_messages_group', 'telegram_channel_username');
-    register_setting('custom_telegram_messages_group', 'send_on_create'); // New setting for sending on create
+    register_setting('custom_telegram_messages_group', 'send_on_create');
 }
 
 // Hook into the save_post action
@@ -23,79 +21,81 @@ add_action('save_post', 'telegram_send_product_to_channel');
 
 function telegram_send_product_to_channel($post_id) {
     // Check if the post is a product and the checkbox is checked for sending on create
-    if (get_post_type($post_id) === 'product' && get_option('send_on_create', false) && wp_is_post_revision($post_id)) {
-        return; // Exit if the post is an update (revision)
-    }
+    if (get_post_type($post_id) === 'product' && get_option('send_on_create', false) && !wp_is_post_revision($post_id)) {
+        // Debugging: Log a message to the error log
+        error_log('Sending message for post ID: ' . $post_id);
 
-    $product = get_post($post_id);
 
-    // Get the custom message from options
-    $custom_message = get_option('custom_message');
+        $product = get_post($post_id);
 
-    // Replace shortcodes with dynamic content
-    $replacements = array(
-        '{post_title}' => $product->post_title,
-        '{ID}' => $post_id,
-        '{terms:product_cat}' => implode(', ', wp_get_post_terms($post_id, 'product_cat', array('fields' => 'names'))),
-        '{cf:description}' => get_post_meta($post_id, 'description', true),
-        '{cf:_regular_price}' => get_post_meta($post_id, '_regular_price', true),
-    );
+        // Get the custom message from options
+        $custom_message = get_option('custom_message');
 
-    // Replace custom field shortcodes
-    $custom_fields = get_post_custom($post_id);
-    foreach ($custom_fields as $key => $value) {
-        $replacements['{cf:' . $key . '}'] = $value[0];
-    }
+        // Replace shortcodes with dynamic content
+        $replacements = array(
+            '{post_title}' => $product->post_title,
+            '{ID}' => $post_id,
+            '{terms:product_cat}' => implode(', ', wp_get_post_terms($post_id, 'product_cat', array('fields' => 'names'))),
+            '{cf:description}' => get_post_meta($post_id, 'description', true),
+            '{cf:_regular_price}' => get_post_meta($post_id, '_regular_price', true),
+        );
 
-    $message = str_replace(array_keys($replacements), array_values($replacements), $custom_message);
+        // Replace custom field shortcodes
+        $custom_fields = get_post_custom($post_id);
+        foreach ($custom_fields as $key => $value) {
+            $replacements['{cf:' . $key . '}'] = $value[0];
+        }
 
-    // Get Bot API and Channel Username from options
-    $telegram_bot_api = get_option('telegram_bot_api');
-    $telegram_channel_username = get_option('telegram_channel_username');
+        $message = str_replace(array_keys($replacements), array_values($replacements), $custom_message);
 
-    // Set up your Telegram Bot API parameters
-    $chat_id = get_channel_id_from_username($telegram_bot_api, $telegram_channel_username);
+        // Get Bot API and Channel Username from options
+        $telegram_bot_api = get_option('telegram_bot_api');
+        $telegram_channel_username = get_option('telegram_channel_username');
 
-    if (!$chat_id) {
-        return; // Exit if channel ID cannot be determined
-    }
+        // Set up your Telegram Bot API parameters
+        $chat_id = get_channel_id_from_username($telegram_bot_api, $telegram_channel_username);
 
-    // Check if the option to show product image is enabled
-    $show_image = get_option('show_image', 0);
-    $image_url = '';
-    if ($show_image) {
-        $image_url = get_the_post_thumbnail_url($post_id, 'full');
-    }
+        if (!$chat_id) {
+            return; // Exit if channel ID cannot be determined
+        }
 
-    // Get inline button text from options
-    $inline_button_text = get_option('inline_button_text', '📦 See The Product'); // Default text
+        // Check if the option to show product image is enabled
+        $show_image = get_option('show_image', 0);
+        $image_url = '';
+        if ($show_image) {
+            $image_url = get_the_post_thumbnail_url($post_id, 'full');
+        }
 
-    // Inline keyboard markup
-    $keyboard = array(
-        'inline_keyboard' => array(
-            array(
+        // Get inline button text from options
+        $inline_button_text = get_option('inline_button_text', '📦 See The Product'); // Default text
+
+        // Inline keyboard markup
+        $keyboard = array(
+            'inline_keyboard' => array(
                 array(
-                    'text' => $inline_button_text,
-                    'url' => get_permalink($post_id),
+                    array(
+                        'text' => $inline_button_text,
+                        'url' => get_permalink($post_id),
+                    ),
                 ),
             ),
-        ),
-    );
+        );
 
-    // Encode the keyboard markup as JSON
-    $keyboard_json = json_encode($keyboard);
+        // Encode the keyboard markup as JSON
+        $keyboard_json = json_encode($keyboard);
 
-    // Send message to Telegram channel
-    $telegram_url = "https://api.telegram.org/bot{$telegram_bot_api}/sendPhoto"; // Change to sendPhoto method
-    $response = wp_remote_post($telegram_url, array(
-        'body' => array(
-            'chat_id' => $chat_id,
-            'photo' => $image_url, // Use 'photo' parameter instead of 'text'
-            'caption' => $message, // Caption for the image
-            'parse_mode' => 'HTML',
-            'reply_markup' => $keyboard_json,
-        ),
-    ));
+        // Send message to Telegram channel
+        $telegram_url = "https://api.telegram.org/bot{$telegram_bot_api}/sendPhoto"; // Change to sendPhoto method
+        $response = wp_remote_post($telegram_url, array(
+            'body' => array(
+                'chat_id' => $chat_id,
+                'photo' => $image_url, // Use 'photo' parameter instead of 'text'
+                'caption' => $message, // Caption for the image
+                'parse_mode' => 'HTML',
+                'reply_markup' => $keyboard_json,
+            ),
+        ));
+    }
 }
 
 // Function to get the channel ID from the username
@@ -121,7 +121,7 @@ function get_channel_id_from_username($bot_api, $channel_username) {
 function custom_telegram_messages_page() {
     ?>
     <div class="wrap">
-        <h1>Custom Telegram Messages</h1>
+        <h1>TeleWoo - Custom Telegram Messages</h1>
         <form method="post" action="options.php">
             <?php settings_fields('custom_telegram_messages_group'); ?>
             <?php do_settings_sections('custom-telegram-messages'); ?>
@@ -160,11 +160,11 @@ function custom_telegram_messages_page() {
                     </td>
                 </tr>
                 <tr valign="top">
-                    <th scope="row">Send post only when created (not updated)</th>
+                    <th scope="row">Send on Create</th>
                     <td>
                         <label for="send_on_create">
                             <input type="checkbox" id="send_on_create" name="send_on_create" value="1" <?php checked(get_option('send_on_create', false), 1); ?>>
-                            Check this box to send the post only when created and not updated.
+                            Send posts only when created (not updated)
                         </label>
                     </td>
                 </tr>
@@ -199,7 +199,7 @@ function custom_telegram_messages_menu() {
         'manage_options',                    // Capability
         'custom-telegram-messages',          // Menu slug
         'custom_telegram_messages_page',     // Callback function
-        'fa-brands fa-telegram',             // FontAwesome icon class
+        'dashicons-share',                   // Dashicon class for the Telegram icon
         30                                  // Position in the menu
     );
 
